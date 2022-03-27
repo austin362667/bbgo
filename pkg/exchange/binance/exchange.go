@@ -24,14 +24,19 @@ import (
 
 	"github.com/c9s/bbgo/pkg/fixedpoint"
 	"github.com/c9s/bbgo/pkg/types"
+	"github.com/c9s/bbgo/pkg/util"
 )
 
 const BNB = "BNB"
 
 const BinanceUSBaseURL = "https://api.binance.us"
+const BinanceTestBaseURL = "https://testnet.binance.vision"
 const BinanceUSWebSocketURL = "wss://stream.binance.us:9443"
 const WebSocketURL = "wss://stream.binance.com:9443"
+const WebSocketTestURL = "wss://testnet.binance.vision"
+const FutureTestBaseURL = "https://testnet.binancefuture.com"
 const FuturesWebSocketURL = "wss://fstream.binance.com"
+const FuturesWebSocketTestURL = "wss://stream.binancefuture.com"
 
 // 5 per second and a 2 initial bucket
 var orderLimiter = rate.NewLimiter(5, 2)
@@ -56,6 +61,11 @@ func isBinanceUs() bool {
 	return err == nil && v
 }
 
+func paperTrade() bool {
+	v, ok := util.GetEnvVarBool("PAPER_TRADE")
+	return ok && v
+}
+
 type Exchange struct {
 	types.MarginSettings
 	types.FuturesSettings
@@ -78,6 +88,11 @@ func New(key, secret string) *Exchange {
 
 	if isBinanceUs() {
 		client.BaseURL = BinanceUSBaseURL
+	}
+
+	if paperTrade() {
+		client.BaseURL = BinanceTestBaseURL
+		futuresClient.BaseURL = FutureTestBaseURL
 	}
 
 	var err error
@@ -456,10 +471,10 @@ func (e *Exchange) QuerySpotAccount(ctx context.Context) (*types.Account, error)
 	}
 
 	a := &types.Account{
-		AccountType:     types.AccountTypeSpot,
-		CanDeposit:      account.CanDeposit,  // if can transfer in asset
-		CanTrade:        account.CanTrade,    // if can trade
-		CanWithdraw:     account.CanWithdraw, // if can transfer out asset
+		AccountType: types.AccountTypeSpot,
+		CanDeposit:  account.CanDeposit,  // if can transfer in asset
+		CanTrade:    account.CanTrade,    // if can trade
+		CanWithdraw: account.CanWithdraw, // if can transfer out asset
 	}
 	a.UpdateBalances(balances)
 	return a, nil
@@ -825,7 +840,8 @@ func (e *Exchange) submitFuturesOrder(ctx context.Context, order types.SubmitOrd
 	req := e.futuresClient.NewCreateOrderService().
 		Symbol(order.Symbol).
 		Type(orderType).
-		Side(futures.SideType(order.Side))
+		Side(futures.SideType(order.Side)).
+		ReduceOnly(order.ReduceOnly)
 
 	clientOrderID := newFuturesClientOrderID(order.ClientOrderID)
 	if len(clientOrderID) > 0 {
@@ -894,6 +910,7 @@ func (e *Exchange) submitFuturesOrder(ctx context.Context, order types.SubmitOrd
 		TimeInForce:      response.TimeInForce,
 		Type:             response.Type,
 		Side:             response.Side,
+		ReduceOnly:       response.ReduceOnly,
 	}, true)
 
 	return createdOrder, err

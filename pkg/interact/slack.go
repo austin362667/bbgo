@@ -13,6 +13,8 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
+
+	"github.com/c9s/bbgo/pkg/util"
 )
 
 type SlackReply struct {
@@ -64,6 +66,12 @@ func (reply *SlackReply) AddButton(text string, name string, value string) {
 		Name:  name,
 		Value: value,
 	})
+}
+
+func (reply *SlackReply) AddMultipleButtons(buttonsForm [][3]string) {
+	for _, buttonForm := range buttonsForm {
+		reply.AddButton(buttonForm[0], buttonForm[1], buttonForm[2])
+	}
 }
 
 func (reply *SlackReply) build() interface{} {
@@ -165,14 +173,17 @@ type Slack struct {
 }
 
 func NewSlack(client *slack.Client) *Slack {
-	socket := socketmode.New(
-		client,
-		socketmode.OptionDebug(true),
+	var opts = []socketmode.Option{
 		socketmode.OptionLog(
 			stdlog.New(os.Stdout, "socketmode: ",
 				stdlog.Lshortfile|stdlog.LstdFlags)),
-	)
+	}
 
+	if b, ok := util.GetEnvVarBool("DEBUG_SLACK"); ok {
+		opts = append(opts, socketmode.OptionDebug(b))
+	}
+
+	socket := socketmode.New(client, opts...)
 	return &Slack{
 		client:            client,
 		socket:            socket,

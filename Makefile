@@ -65,6 +65,48 @@ bbgo-slim-darwin-amd64: $(BIN_DIR)
 
 bbgo-slim-darwin: bbgo-slim-darwin-amd64 bbgo-slim-darwin-arm64
 
+# build native bbgo
+bbgo-dnum: static
+	go build -tags web,release,dnum -o $(BIN_DIR)/bbgo ./cmd/bbgo
+
+# build native bbgo (slim version)
+bbgo-slim-dnum:
+	go build -tags release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+# build cross-compile linux bbgo
+bbgo-dnum-linux: bbgo-dnum-linux-amd64 bbgo-dnum-linux-arm64
+
+bbgo-dnum-linux-amd64: $(BIN_DIR) pkg/server/assets.go
+	GOOS=linux GOARCH=amd64 go build -tags web,release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-dnum-linux-arm64: $(BIN_DIR) pkg/server/assets.go
+	GOOS=linux GOARCH=arm64 go build -tags web,release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+# build cross-compile linux bbgo (slim version)
+bbgo-slim-dnum-linux: bbgo-slim-dnum-linux-amd64 bbgo-slim-dnum-linux-arm64
+
+bbgo-slim-dnum-linux-amd64: $(BIN_DIR)
+	GOOS=linux GOARCH=amd64 go build -tags release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-slim-dnum-linux-arm64: $(BIN_DIR)
+	GOOS=linux GOARCH=arm64 go build -tags release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-dnum-darwin: bbgo-dnum-darwin-arm64 bbgo-dnum-darwin-amd64
+
+bbgo-dnum-darwin-arm64: $(BIN_DIR) pkg/server/assets.go
+	GOOS=darwin GOARCH=arm64 go build -tags web,release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-dnum-darwin-amd64: $(BIN_DIR) pkg/server/assets.go
+	GOOS=darwin GOARCH=amd64 go build -tags web,release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-slim-dnum-darwin-arm64: $(BIN_DIR)
+	GOOS=darwin GOARCH=arm64 go build -tags release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-slim-dnum-darwin-amd64: $(BIN_DIR)
+	GOOS=darwin GOARCH=amd64 go build -tags release,dnum -o $(BIN_DIR)/$@ ./cmd/bbgo
+
+bbgo-slim-dnum-darwin: bbgo-slim-dnum-darwin-amd64 bbgo-slim-dnum-darwin-arm64
+
 
 clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR) $(FRONTEND_EXPORT_DIR)
@@ -108,17 +150,37 @@ ifeq ($(SIGN),1)
 	gpg --yes --detach-sign --armor $@
 endif
 
+$(DIST_DIR)/$(VERSION)/bbgo-slim-dnum-$(VERSION)-%.tar.gz: bbgo-slim-dnum-% $(DIST_DIR)/$(VERSION)
+	tar -C $(BIN_DIR) -cvzf $@ $<
+ifeq ($(SIGN),1)
+	gpg --yes --detach-sign --armor $@
+endif
+
+$(DIST_DIR)/$(VERSION)/bbgo-dnum-$(VERSION)-%.tar.gz: bbgo-dnum-% $(DIST_DIR)/$(VERSION)
+	tar -C $(BIN_DIR) -cvzf $@ $<
+ifeq ($(SIGN),1)
+	gpg --yes --detach-sign --armor $@
+endif
+
 dist-bbgo-linux: \
 	$(DIST_DIR)/$(VERSION)/bbgo-$(VERSION)-linux-arm64.tar.gz \
 	$(DIST_DIR)/$(VERSION)/bbgo-$(VERSION)-linux-amd64.tar.gz \
 	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-linux-arm64.tar.gz \
-	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-linux-amd64.tar.gz
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-linux-amd64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-dnum-$(VERSION)-linux-arm64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-dnum-$(VERSION)-linux-amd64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-dnum-$(VERSION)-linux-arm64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-dnum-$(VERSION)-linux-amd64.tar.gz
 
 dist-bbgo-darwin: \
 	$(DIST_DIR)/$(VERSION)/bbgo-$(VERSION)-darwin-arm64.tar.gz \
 	$(DIST_DIR)/$(VERSION)/bbgo-$(VERSION)-darwin-amd64.tar.gz \
 	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-darwin-arm64.tar.gz \
-	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-darwin-amd64.tar.gz
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-$(VERSION)-darwin-amd64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-dnum-$(VERSION)-darwin-arm64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-dnum-$(VERSION)-darwin-amd64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-dnum-$(VERSION)-darwin-arm64.tar.gz \
+	$(DIST_DIR)/$(VERSION)/bbgo-slim-dnum-$(VERSION)-darwin-amd64.tar.gz
 
 dist: static dist-bbgo-linux dist-bbgo-darwin desktop
 
@@ -129,14 +191,16 @@ pkg/version/dev.go: .FORCE
 	BUILD_FLAGS="!release" VERSION_SUFFIX="-dev" bash utils/generate-version-file.sh > $@
 
 dev-version: pkg/version/dev.go
+	git add $<
 	git commit $< -m "update dev build version"
 
 cmd-doc: .FORCE
 	go run ./cmd/update-doc
 	git add -v doc/commands
-	git commit -m "update command doc files" doc/commands
+	git commit -m "update command doc files" doc/commands || true
 
 version: pkg/version/version.go pkg/version/dev.go migrations cmd-doc
+	git add $< $(word 2,$^)
 	git commit $< $(word 2,$^) -m "bump version to $(VERSION)" || true
 	[[ -e doc/release/$(VERSION).md ]] || (echo "file doc/release/$(VERSION).md does not exist" ; exit 1)
 	git add -v doc/release/$(VERSION).md && git commit doc/release/$(VERSION).md -m "add $(VERSION) release note" || true
@@ -175,3 +239,6 @@ static: frontend/out/index.html pkg/server/assets.go
 
 protobuf:
 	protoc -I=$(PWD)/pkg/pb --go_out=$(PWD)/pkg/pb $(PWD)/pkg/pb/bbgo.proto
+
+protobuf-py:
+	python -m grpc_tools.protoc -I$(PWD)/pkg/pb --python_out=$(PWD)/python/bbgo --grpc_python_out=$(PWD)/python/bbgo $(PWD)/pkg/pb/bbgo.proto

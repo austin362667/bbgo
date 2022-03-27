@@ -62,7 +62,7 @@ func (s *Strategy) ID() string {
 }
 
 func (s *Strategy) updateOrders(orderExecutor bbgo.OrderExecutor, session *bbgo.ExchangeSession) {
-	if err := session.Exchange.CancelOrders(context.Background(), s.activeOrders.Bids.Orders()...); err != nil {
+	if err := orderExecutor.CancelOrders(context.Background(), s.activeOrders.Bids.Orders()...); err != nil {
 		log.WithError(err).Errorf("cancel order error")
 	}
 
@@ -119,7 +119,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 		log.Infof("canceling active orders...")
 
-		if err := session.Exchange.CancelOrders(ctx, s.activeOrders.Orders()...); err != nil {
+		if err := orderExecutor.CancelOrders(ctx, s.activeOrders.Orders()...); err != nil {
 			log.WithError(err).Errorf("cancel order error")
 		}
 	})
@@ -129,11 +129,13 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		Window:   25,
 	})
 
+	session.UserDataStream.OnStart(func() {
+		s.updateOrders(orderExecutor, session)
+	})
+
 	session.MarketDataStream.OnKLineClosed(func(kline types.KLine) {
 		s.updateOrders(orderExecutor, session)
 	})
 
-	// TODO: move this to the stream onConnect handler
-	s.updateOrders(orderExecutor, session)
 	return nil
 }

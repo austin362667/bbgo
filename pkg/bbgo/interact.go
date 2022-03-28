@@ -39,10 +39,21 @@ type EmergencyStopper interface {
 	EmergencyStop(ctx context.Context) error
 }
 
+type HiLoController interface { // Temporary solution
+	SetHiLo(high fixedpoint.Value, low fixedpoint.Value) error
+}
+
 type closePositionContext struct {
 	signature  string
 	closer     PositionCloser
 	percentage fixedpoint.Value
+}
+
+type setHiLoContext struct {
+	signature  string
+	controller HiLoController
+	high       fixedpoint.Value
+	low        fixedpoint.Value
 }
 
 type CoreInteraction struct {
@@ -51,6 +62,7 @@ type CoreInteraction struct {
 
 	exchangeStrategies   map[string]SingleExchangeStrategy
 	closePositionContext closePositionContext
+	setHiLoContext       setHiLoContext
 }
 
 func NewCoreInteraction(environment *Environment, trader *Trader) *CoreInteraction {
@@ -392,6 +404,59 @@ func (it *CoreInteraction) Commands(i *interact.Interact) {
 		}
 
 		reply.Message(fmt.Sprintf("Strategy %s stopped and the position closed.", signature))
+		return nil
+	})
+
+	i.PrivateCommand("/sethilo", "Set High and Low", func(reply interact.Reply) error {
+		// it.trader.exchangeStrategies
+		// send symbol options
+		if buttonsForm, found := it.AddSupportedStrategyButtons((*HiLoController)(nil)); found {
+			reply.AddMultipleButtons(buttonsForm)
+			reply.Message("Please choose one strategy")
+		} else {
+			reply.Message("No any strategy supports HiLoController")
+		}
+		return nil
+	}).Next(func(signature string, reply interact.Reply) error {
+		strategy, ok := it.exchangeStrategies[signature]
+		if !ok {
+			reply.Message("Strategy not found")
+			return fmt.Errorf("strategy %s not found", signature)
+		}
+
+		controller, implemented := strategy.(HiLoController)
+		if !implemented {
+			reply.Message(fmt.Sprintf("Strategy %s does not support setting high low prices", signature))
+			return fmt.Errorf("strategy %s does not implement HiLoController interface", signature)
+		}
+
+		it.setHiLoContext.controller = controller
+		it.setHiLoContext.signature = signature
+
+		reply.Message("Please enter the high price")
+
+		return nil
+	}).Next(func(highPrice string, reply interact.Reply) error {
+		it.setHiLoContext.high, _ = fixedpoint.NewFromString(highPrice)
+
+		reply.Message("Please enter the low price")
+
+		return nil
+	}).Next(func(lowPrice string, reply interact.Reply) error {
+		it.setHiLoContext.low, _ = fixedpoint.NewFromString(lowPrice)
+
+		err := it.setHiLoContext.controller.SetHiLo(it.setHiLoContext.high, it.setHiLoContext.low)
+
+		if kc, ok := reply.(interact.KeyboardController); ok {
+			kc.RemoveKeyboard()
+		}
+
+		if err != nil {
+			reply.Message(fmt.Sprintf("Failed to set the high low prices, %s", err.Error()))
+			return err
+		}
+
+		reply.Message(fmt.Sprintf("High low prices set for strategy %s.", it.setHiLoContext.signature))
 		return nil
 	})
 }

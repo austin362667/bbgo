@@ -56,6 +56,13 @@ func (s *Strategy) ClosePosition(ctx context.Context, percentage fixedpoint.Valu
 	return err
 }
 
+func (s *Strategy) SetHiLo(high fixedpoint.Value, low fixedpoint.Value) error {
+	s.hh = high
+	s.ll = low
+
+	return nil
+}
+
 type Strategy struct {
 	*bbgo.Notifiability
 	Symbol   string `json:"symbol"`
